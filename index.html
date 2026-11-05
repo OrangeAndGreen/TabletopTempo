@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Tabletop Tempo</title>
+<meta name="description" content="Slap the table, stomp your feet. Live tempo and steadiness from your phone's microphone.">
+<meta name="theme-color" content="#0f151c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f2f4f7" media="(prefers-color-scheme: light)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one column. Listen button and the live readout on top, scrolling charts under it, session numbers after */
+:root {
+  --bg: #f2f4f7; --surface: #ffffff; --ink: #17202a; --muted: #5b6876; --line: #d8dee6; --wave: #9aa6b4;
+  --hands: #c27c0e; --feet: #1d7486; --good: #2f8a4c; --ok: #a9740f; --warn: #b5432f; --rec: #d03a2a;
+  --display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", Consolas, "Courier New", monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f151c; --surface: #17202a; --ink: #e6ebf1; --muted: #8e9baa; --line: #2a3542;
+    --wave: #5d6b7b; --hands: #eea53a; --feet: #4cb2c6; --good: #5cc07a; --ok: #e0b04a; --warn: #ec7a62; --rec: #f0604f;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px 40px; -webkit-tap-highlight-color: transparent;
+}
+[hidden] { display: none !important; }
+.wrap { max-width: 960px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-family: var(--display); font-weight: 800; font-size: 34px; line-height: 1; margin: 0; letter-spacing: .5px; text-transform: uppercase; }
+h1 span { color: var(--feet); }
+h2 { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0; }
+
+.deck { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.deck-top { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+#listen {
+  font: 700 18px var(--body); color: #fff; background: var(--feet); border: 0; border-radius: 999px;
+  padding: 16px 28px; min-width: 150px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+}
+#listen .dot { width: 12px; height: 12px; border-radius: 50%; background: #fff; }
+#listen.on { background: var(--rec); }
+#listen.on .dot { border-radius: 2px; animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { #listen.on .dot { animation: none; } }
+button:focus-visible, select:focus-visible, input[type=range]:focus-visible { outline: 2px solid var(--feet); outline-offset: 3px; }
+.beat { width: 56px; height: 56px; border-radius: 50%; border: 2px solid var(--line); flex: none; }
+.beat.feet { background: var(--feet); border-color: var(--feet); }
+.beat.hands { background: var(--hands); border-color: var(--hands); }
+.beat.all { background: var(--ink); border-color: var(--ink); }
+.now .k, .side .k { display: block; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.now .big { font-family: var(--display); font-weight: 800; font-size: 84px; line-height: .9; font-variant-numeric: tabular-nums; }
+.u { font-size: 12px; color: var(--muted); margin-left: 4px; }
+.side { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.side .mid { font-family: var(--display); font-weight: 800; font-size: 32px; line-height: 1; font-variant-numeric: tabular-nums; }
+.opts { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; border-top: 1px solid var(--line); padding-top: 12px; }
+label.opt { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+select { font: 14px var(--body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+input[type=range] { accent-color: var(--feet); width: 120px; }
+.notice { font-size: 14px; border-left: 3px solid var(--ok); padding: 6px 10px; background: var(--bg); border-radius: 0 6px 6px 0; }
+.notice.warn { border-color: var(--warn); }
+
+.panel { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.panel-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+.cv { width: 100%; min-width: 0; }
+canvas { display: block; }
+.cap { font-size: 13px; color: var(--muted); margin: 0; max-width: 70ch; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); border-top: 2px solid var(--ink); }
+.stat { padding: 12px 12px 10px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.stat .k { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.stat .v { font-family: var(--display); font-weight: 800; font-size: 40px; line-height: 1; font-variant-numeric: tabular-nums; }
+.stat .v small { font-family: var(--body); font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+.stat .s { font-size: 12px; color: var(--muted); }
+.pill { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 1px 8px; border-radius: 99px; border: 1px solid currentColor; width: fit-content; }
+.pill.good { color: var(--good); } .pill.ok { color: var(--ok); } .pill.warn { color: var(--warn); }
+
+.lanes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.lane { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; grid-template-columns: repeat(4, auto); gap: 4px 14px; align-items: end; }
+.lane h3 { grid-column: 1 / -1; margin: 0 0 4px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.lane h3 i { width: 10px; height: 10px; border-radius: 50%; }
+.lane .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.lane .v { font-family: var(--mono); font-size: 18px; font-variant-numeric: tabular-nums; }
+
+.how { border-top: 1px solid var(--line); padding-top: 14px; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+.how p { margin: 0; max-width: 75ch; }
+.how b { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Tabletop <span>Tempo</span></h1>
+    <h2 id="status">Ready</h2>
+  </header>
+
+  <section class="deck" aria-label="Live">
+    <div class="deck-top">
+      <button id="listen" type="button"><span class="dot"></span><span id="listenLabel">Listen</span></button>
+      <div class="beat" id="beat" aria-hidden="true"></div>
+      <div class="now"><span class="k">Now</span><span class="big" id="lNow">–</span><span class="u">bpm</span></div>
+    </div>
+    <div class="side">
+      <div><span class="k">Last 16 hits</span><span class="mid" id="lSteady">–</span><span class="u">steady</span></div>
+      <div><span class="k">Last hit</span><span class="mid" id="lMiss">–</span><span class="u" id="lMissU">ms</span></div>
+      <div><span class="k">Time</span><span class="mid" id="lTime">0:00</span></div>
+    </div>
+    <div class="notice" id="notice" hidden></div>
+    <div class="opts">
+      <label class="opt" for="sens">Sensitivity <input id="sens" type="range" min="1" max="10" step="1" value="5"></label>
+      <label class="opt" for="split">Sort hits
+        <select id="split"><option value="auto">Hands and feet</option><option value="one">One lane</option></select>
+      </label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Hits</h2><div class="legend" id="legend"></div></div>
+    <div class="cv"><canvas id="cWave" aria-label="Sound level with detected hits"></canvas></div>
+    <div class="cv"><canvas id="cLanes" aria-label="Hits by lane"></canvas></div>
+  </section>
+
+  <section class="panel">
+    <h2>Tempo</h2>
+    <div class="cv"><canvas id="cTempo" aria-label="Tempo over time"></canvas></div>
+  </section>
+
+  <section class="panel">
+    <h2>Early and late</h2>
+    <div class="cv"><canvas id="cTiming" aria-label="Timing deviation of each hit"></canvas></div>
+    <p class="cap">Each bar is one hit against the beat you were keeping at that moment. Up is late, down is early. The shaded band is your typical miss.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Session</h2>
+    <div class="stats" aria-label="Session results">
+      <div class="stat"><span class="k">Average tempo</span><span class="v" id="sAvg">–</span><span class="s">beats per minute</span></div>
+      <div class="stat"><span class="k">Fastest stretch</span><span class="v" id="sPeak">–</span><span class="s" id="sPeakS">over about 8 hits</span></div>
+      <div class="stat"><span class="k">Steadiness</span><span class="v" id="sSteady">–</span><span class="s" id="sSteadyS"></span></div>
+      <div class="stat"><span class="k">Timing spread</span><span class="v" id="sJit">–</span><span class="s">typical miss, either way</span></div>
+      <div class="stat"><span class="k">Drift</span><span class="v" id="sDrift">–</span><span class="s" id="sDriftS">start to finish</span></div>
+      <div class="stat"><span class="k">Hits</span><span class="v" id="sHits">–</span><span class="s" id="sHitsS"></span></div>
+    </div>
+  </section>
+
+  <section class="lanes" id="laneCards" aria-label="Per lane" hidden></section>
+
+  <section class="panel">
+    <h2>Gaps between hits</h2>
+    <div class="cv"><canvas id="cHist" aria-label="Histogram of gaps between hits"></canvas></div>
+    <p class="cap">A steady player makes tall, narrow spikes on the dashed beat lines. Spikes at 2 or ½ are rests or doubled-up hits.</p>
+  </section>
+
+  <footer class="how">
+    <p><b>Setup.</b> Put the phone on the floor or a chair, not on the table you slap, and tap Listen. Nothing is recorded or sent anywhere: the sound is analyzed on the phone as it arrives and then thrown away.</p>
+    <p><b>How hits are found.</b> The sound is split into a low band (under 180 Hz, where stomps live) and a high band (over 1.2 kHz, where slaps live). A hit is a sudden jump in either band that stands clear of the room's background noise. Each hit is confirmed about 50 ms after it lands. Hits are sorted into hands and feet by how their energy divides between the bands.</p>
+    <p><b>How steadiness is scored.</b> The app finds the beat unit you are playing, follows it as you speed up or slow down, and checks each gap against it, allowing rests and doubled-up hits. 100 minus four times the average miss in percent gives the score: a 2.5% average miss scores 90. Gaps over 2.5 seconds count as pauses.</p>
+  </footer>
+</div>
+
+<script>
+(() => {
+const $ = (s) => document.querySelector(s);
+const LIVE_WINDOW = 20, BUCKETS = 100; // seconds shown while listening, waveform buckets per second
+const state = { live: null, last: null, ctx: null, sens: 5, splitMode: 'auto' };
+const NO_MIC = "This browser can't reach the microphone. Open the page in Chrome over https.";
+const DENIED = "The microphone is blocked for this page. Allow it in Chrome's site settings (the icon left of the address), then tap Listen again.";
+
+// ---------- helpers ----------
+function pct(arr, p) {
+  const n = arr.length; if (!n) return 0;
+  const a = Float64Array.from(arr).sort();
+  return a[Math.min(n - 1, Math.max(0, Math.round(p / 100 * (n - 1))))];
+}
+function mean(a) { let s = 0; for (const v of a) s += v; return a.length ? s / a.length : 0; }
+function colors() {
+  const s = getComputedStyle(document.documentElement), g = (k) => s.getPropertyValue(k).trim();
+  return { ink: g('--ink'), muted: g('--muted'), line: g('--line'), wave: g('--wave'), hands: g('--hands'), feet: g('--feet'), surface: g('--surface'), rec: g('--rec'), mono: g('--mono'), body: g('--body') };
+}
+function laneColor(c, lane) { return lane === 'feet' ? c.feet : lane === 'hands' ? c.hands : c.ink; }
+function fmtT(t) { if (t < 60) return (Number.isInteger(t) ? t : t.toFixed(1)) + 's'; const m = Math.floor(t / 60), s = Math.round(t % 60); return m + ':' + String(s).padStart(2, '0'); }
+function clock(t) { const s = Math.floor(t); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+function notice(msg, kind) { const n = $('#notice'); if (!msg) { n.hidden = true; return; } n.textContent = msg; n.className = 'notice' + (kind ? ' ' + kind : ''); n.hidden = false; }
+
+// ---------- streaming engine ----------
+// Takes audio in chunks of any size and appends each hit once it is confirmed, about 50 ms after it lands.
+// Results do not depend on chunk size. Only small summaries are kept, never the audio itself.
+function biquad(sr, type, f) {
+  const w0 = 2 * Math.PI * f / sr, cs = Math.cos(w0), al = Math.sin(w0) / (2 * Math.SQRT1_2);
+  let b0, b1, b2; if (type === 'lp') { b0 = (1 - cs) / 2; b1 = 1 - cs; b2 = b0; } else { b0 = (1 + cs) / 2; b1 = -(1 + cs); b2 = b0; }
+  const a0 = 1 + al; return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: -2 * cs / a0, a2: (1 - al) / a0, x1: 0, x2: 0, y1: 0, y2: 0 };
+}
+function bq(f, x) { const y = f.b0 * x + f.b1 * f.x1 + f.b2 * f.x2 - f.a1 * f.y1 - f.a2 * f.y2; f.x2 = f.x1; f.x1 = x; f.y2 = f.y1; f.y1 = y; return y; }
+
+function createEngine(sr) {
+  const hop = Math.max(32, Math.round(sr * 0.005)), win = hop * 2, bsz = Math.max(1, Math.round(sr / BUCKETS));
+  const l1 = biquad(sr, 'lp', 180), l2 = biquad(sr, 'lp', 180), h1 = biquad(sr, 'hp', 1200), h2 = biquad(sr, 'hp', 1200);
+  const E = { sr, hop, win, envL: [], envH: [], envF: [], odf: [], onsets: [], pmin: [], pmax: [], amp: 0.02, n: 0, version: 0 };
+  let bL = 0, bH = 0, bF = 0, bc = 0, prev = null, pmn = 0, pmx = 0, pc = 0;
+  let sL = 1e-9, sH = 1e-9, noise = 0, odfRef = 1e-4, done = 3, medV = 0;
+  const minGap = Math.ceil(0.07 / (hop / sr));
+
+  function refresh(n) {
+    const a = Math.max(0, n - 2000);
+    sL = Math.max(1e-7, pct(E.envL.slice(a, n + 1), 99));
+    sH = Math.max(1e-7, pct(E.envH.slice(a, n + 1), 99));
+    noise = pct(E.envF.slice(a, n + 1), 20);
+  }
+  function step() {
+    const nF = E.envF.length;
+    // Measure frame m, then judge frame m - 10, whose 50 ms of lookahead is now in.
+    while (E.odf.length < nF) {
+      const m = E.odf.length;
+      if (m % 50 === 0) refresh(m);
+      let v = 0;
+      if (m >= 2) {
+        // against at least this frame's own level, so the first hit after silence isn't inflated
+        const a = (E.envL[m] - E.envL[m - 2]) / Math.max(sL, E.envL[m]), b = (E.envH[m] - E.envH[m - 2]) / Math.max(sH, E.envH[m]);
+        v = (a > 0 ? a : 0) + (b > 0 ? b : 0);
+      }
+      E.odf.push(v);
+      if (m % 50 === 0) odfRef = Math.max(1e-4, pct(E.odf.slice(Math.max(0, m - 2000)), 99.5));
+      if (m - 10 >= done) detectAt(done++);
+    }
+  }
+  function detectAt(n) {
+    const sens = state.sens, mult = 2.2 - sens * 0.16, delta = Math.max(1e-4, (0.2 - sens * 0.016) * odfRef);
+    const gate = Math.max(4 * noise, 0.002);
+    if (n % 4 === 0 || !medV) medV = pct(E.odf.slice(Math.max(0, n - 60), n + 4), 50);
+    const v = E.odf[n];
+    if (n < 3 || v <= delta || v < mult * medV + delta) return;
+    for (let j = -3; j <= 3; j++) if (j && E.odf[n + j] > v) return;
+    let eL = 0, eH = 0, eF = 0;
+    for (let j = n; j < n + 9; j++) { if (E.envL[j] > eL) eL = E.envL[j]; if (E.envH[j] > eH) eH = E.envH[j]; if (E.envF[j] > eF) eF = E.envF[j]; }
+    if (eF < gate) return;
+    const hit = { n, v, t: (n * hop + win / 2) / sr, feat: Math.log((eH + 1e-9) / (eL + 1e-9)), loud: eF, lane: 'all' };
+    const last = E.onsets[E.onsets.length - 1];
+    if (last && n - last.n < minGap) { if (v > last.v) E.onsets[E.onsets.length - 1] = hit; else return; }
+    else E.onsets.push(hit);
+    E.version++;
+  }
+  E.push = (x, store = true) => {
+    for (let i = 0; i < x.length; i++) {
+      const v = x[i], lo = bq(l2, bq(l1, v)), hi = bq(h2, bq(h1, v));
+      bL += lo * lo; bH += hi * hi; bF += v * v;
+      if (++bc === hop) {
+        if (prev) { E.envL.push(Math.sqrt((prev[0] + bL) / win)); E.envH.push(Math.sqrt((prev[1] + bH) / win)); E.envF.push(Math.sqrt((prev[2] + bF) / win)); }
+        prev = [bL, bH, bF]; bL = bH = bF = 0; bc = 0;
+      }
+      if (store) {
+        if (v < pmn) pmn = v; if (v > pmx) pmx = v;
+        if (++pc === bsz) { E.pmin.push(pmn); E.pmax.push(pmx); const a = Math.max(-pmn, pmx); if (a > E.amp) E.amp = a; pmn = pmx = 0; pc = 0; }
+      }
+    }
+    if (store) E.n += x.length;
+    step();
+  };
+  E.finish = () => E.push(new Float32Array(Math.round(sr * 0.1)), false);
+  E.time = () => E.n / sr;
+  return E;
+}
+
+// ---------- hands vs feet ----------
+function splitLanes(onsets) {
+  onsets.forEach((o) => { o.lane = 'all'; });
+  if (state.splitMode !== 'auto' || onsets.length < 6) return false;
+  const f = onsets.map((o) => o.feat);
+  let c1 = Infinity, c2 = -Infinity; for (const v of f) { if (v < c1) c1 = v; if (v > c2) c2 = v; }
+  if (c2 - c1 < 0.8) return false;
+  for (let it = 0; it < 30; it++) {
+    let s1 = 0, n1 = 0, s2 = 0, n2 = 0;
+    for (const v of f) { if (Math.abs(v - c1) <= Math.abs(v - c2)) { s1 += v; n1++; } else { s2 += v; n2++; } }
+    if (n1) c1 = s1 / n1; if (n2) c2 = s2 / n2;
+  }
+  const lab = f.map((v) => (Math.abs(v - c1) <= Math.abs(v - c2) ? 'feet' : 'hands'));
+  let sd = 0; f.forEach((v, i) => { const c = lab[i] === 'feet' ? c1 : c2; sd += (v - c) ** 2; }); sd = Math.sqrt(sd / f.length);
+  const nFeet = lab.filter((l) => l === 'feet').length;
+  if (Math.min(nFeet, lab.length - nFeet) < 3 || c2 - c1 < Math.max(0.8, 2 * sd)) return false;
+  onsets.forEach((o, i) => { o.lane = lab[i]; });
+  return true;
+}
+
+// ---------- rhythm analysis ----------
+const MULTS = [0.25, 1 / 3, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8];
+function nearestMult(r) { let best = 1, d = Infinity; for (const m of MULTS) { const e = Math.abs(r - m) / m; if (e < d) { d = e; best = m; } } return best; }
+
+function analyzeTimes(times) {
+  const N = times.length; if (N < 5) return null;
+  const ioi = []; for (let i = 1; i < N; i++) ioi.push(times[i] - times[i - 1]);
+  const valid = ioi.filter((x) => x < 2.5); if (valid.length < 4) return null;
+  const med = pct(valid, 50), upper = med * 1.08, lower = Math.max(0.06, upper / 6);
+  let u = med;
+  for (let s = 0; s <= 200; s++) {
+    const cand = upper * Math.pow(lower / upper, s / 200);
+    const errs = valid.map((x) => { const r = x / cand; return Math.abs(r - Math.max(1, Math.round(r))); });
+    if (pct(errs, 50) < 0.12) { u = cand; break; }
+  }
+  u = pct(valid.map((x) => x / nearestMult(x / u)), 50);
+  const items = ioi.map((x, i) => { const m = nearestMult(x / u); return { t: times[i + 1], ioi: x, m, unit: x / m, ok: x < 2.5 && x / u < 8.5 }; });
+  const ok = items.filter((o) => o.ok); if (ok.length < 4) return null;
+  ok.forEach((o, k) => {
+    const a = Math.max(0, k - 4), b = Math.min(ok.length, k + 5);
+    o.uLoc = pct(ok.slice(a, b).map((q) => q.unit), 50);
+    o.full = b - a >= 7;
+    o.dev = o.ioi - o.m * o.uLoc;
+    o.rel = Math.min(0.5, Math.abs(o.dev) / o.uLoc);
+  });
+  const series = ok.map((o) => ({ t: o.t - o.ioi / 2, bpm: 60 / o.uLoc, full: o.full }));
+  const full = series.filter((s) => s.full), pool = full.length ? full : series;
+  let peak = 0, low = Infinity; for (const s of pool) { if (s.bpm > peak) peak = s.bpm; if (s.bpm < low) low = s.bpm; }
+  const mt = mean(series.map((s) => s.t)), mb = mean(series.map((s) => s.bpm));
+  let sxy = 0, sxx = 0; for (const s of series) { sxy += (s.t - mt) * (s.bpm - mb); sxx += (s.t - mt) ** 2; }
+  const span = times[N - 1] - times[0];
+  const score = (list) => Math.max(0, Math.min(100, Math.round(100 - 400 * mean(list.map((o) => o.rel)))));
+  return {
+    u, items, ok, series, hits: N, span, pauses: items.length - ok.length,
+    avgBpm: 60 / pct(ok.map((o) => o.unit), 50), peakBpm: peak, lowBpm: low,
+    nowBpm: 60 / pct(ok.slice(-8).map((o) => o.unit), 50), recentSteady: score(ok.slice(-16)),
+    drift: sxx ? (sxy / sxx) * span : 0,
+    jitterMs: pct(ok.map((o) => Math.abs(o.dev)), 50) * 1000,
+    steadiness: score(ok),
+  };
+}
+
+function snapshot(E, live) {
+  const onsets = E.onsets, split = splitLanes(onsets), all = analyzeTimes(onsets.map((o) => o.t)), lanes = {};
+  if (split) for (const l of ['feet', 'hands']) lanes[l] = analyzeTimes(onsets.filter((o) => o.lane === l).map((o) => o.t));
+  if (all) { const byT = new Map(onsets.map((o) => [o.t, o.lane])); all.items.forEach((it) => { it.lane = byT.get(it.t) || 'all'; }); }
+  return { onsets, split, all, lanes, pk: { min: E.pmin, max: E.pmax, amp: E.amp }, duration: E.time(), live };
+}
+function current() { return state.live ? state.live.data : state.last; }
+function view(D) {
+  if (D && D.live) { const t1 = Math.max(LIVE_WINDOW, D.duration); return { t0: t1 - LIVE_WINDOW, t1 }; }
+  return { t0: 0, t1: Math.max(1, D ? D.duration : 1) };
+}
+
+// ---------- numbers ----------
+function renderStats(D) {
+  const r = D && D.all, set = (id, v) => { $(id).innerHTML = v; };
+  if (!r) {
+    ['#sAvg', '#sPeak', '#sSteady', '#sJit', '#sDrift'].forEach((id) => set(id, '–'));
+    set('#sHits', String(D ? D.onsets.length : 0)); set('#sSteadyS', ''); set('#sHitsS', ''); set('#sPeakS', 'over about 8 hits'); set('#sDriftS', 'start to finish');
+    return;
+  }
+  set('#sAvg', Math.round(r.avgBpm) + '<small>bpm</small>');
+  set('#sPeak', Math.round(r.peakBpm) + '<small>bpm</small>');
+  set('#sPeakS', 'slowest stretch ' + Math.round(r.lowBpm));
+  set('#sSteady', r.steadiness + '<small>/ 100</small>');
+  const [cls, word] = r.steadiness >= 90 ? ['good', 'Metronome'] : r.steadiness >= 75 ? ['good', 'Steady'] : r.steadiness >= 55 ? ['ok', 'A bit loose'] : ['warn', 'Wobbly'];
+  set('#sSteadyS', `<span class="pill ${cls}">${word}</span>`);
+  set('#sJit', '±' + Math.round(r.jitterMs) + '<small>ms</small>');
+  const d = r.drift;
+  set('#sDrift', (Math.abs(d) < 1.5 ? '0' : (d > 0 ? '+' : '−') + Math.round(Math.abs(d))) + '<small>bpm</small>');
+  set('#sDriftS', Math.abs(d) < 1.5 ? 'held the tempo' : d > 0 ? 'sped up' : 'slowed down');
+  set('#sHits', String(r.hits));
+  set('#sHitsS', `over ${fmtT(Math.round(r.span))}` + (r.pauses ? `, ${r.pauses} pause${r.pauses > 1 ? 's' : ''}` : ''));
+}
+function renderNow(D) {
+  const r = D && D.all, last = D && D.onsets[D.onsets.length - 1];
+  const fresh = D && D.live && last && D.duration - last.t <= 2.5;
+  $('#lNow').textContent = r && fresh ? Math.round(r.nowBpm) : '–';
+  $('#lSteady').textContent = r ? r.recentSteady : '–';
+  const lastOk = r && r.ok[r.ok.length - 1];
+  if (lastOk && fresh) { const ms = Math.round(lastOk.dev * 1000); $('#lMiss').textContent = (ms > 0 ? '+' : ms < 0 ? '−' : '') + Math.abs(ms); $('#lMissU').textContent = ms > 0 ? 'ms late' : ms < 0 ? 'ms early' : 'ms, on it'; }
+  else { $('#lMiss').textContent = '–'; $('#lMissU').textContent = 'ms'; }
+  $('#lTime').textContent = clock(D ? D.duration : 0);
+}
+function renderLanes(D) {
+  const box = $('#laneCards'), legend = $('#legend'); box.innerHTML = ''; legend.innerHTML = '';
+  const lanes = D && D.split ? [['feet', 'Feet'], ['hands', 'Hands']] : [];
+  for (const [key, label] of lanes) {
+    const span = document.createElement('span'); span.innerHTML = `<i style="background:var(--${key})"></i>${label}`; legend.append(span);
+    const r = D.lanes[key], n = D.onsets.filter((o) => o.lane === key).length;
+    const card = document.createElement('div'); card.className = 'lane';
+    card.innerHTML = `<h3><i style="background:var(--${key})"></i>${label}</h3>
+      <span class="k">Hits</span><span class="k">Pulse</span><span class="k">Steady</span><span class="k">Spread</span>
+      <span class="v">${n}</span><span class="v">${r ? Math.round(r.avgBpm) : '–'}</span><span class="v">${r ? r.steadiness : '–'}</span><span class="v">${r ? '±' + Math.round(r.jitterMs) : '–'}</span>`;
+    box.append(card);
+  }
+  box.hidden = !lanes.length;
+}
+
+// ---------- drawing ----------
+const PAD_L = 42, PAD_R = 14;
+function setup(cv, h) {
+  const dpr = window.devicePixelRatio || 1, w = cv.parentElement.clientWidth;
+  cv.style.width = w + 'px'; cv.style.height = h + 'px'; cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  return { g, w, h };
+}
+function mapper(V, w) { const pw = w - PAD_L - PAD_R; return (t) => PAD_L + ((t - V.t0) / (V.t1 - V.t0)) * pw; }
+function drawTimeGrid(g, w, V, top, bottom, c, labels) {
+  const X = mapper(V, w), pxPer = (w - PAD_L - PAD_R) / (V.t1 - V.t0);
+  const st = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find((s) => s * pxPer >= 56) || 1200;
+  g.font = '11px ' + c.mono; g.textAlign = 'center'; g.textBaseline = 'top';
+  for (let t = Math.ceil(V.t0 / st - 1e-9) * st; t <= V.t1 + 1e-6; t += st) {
+    const x = Math.round(X(t)) + 0.5;
+    g.strokeStyle = c.line; g.lineWidth = 1; g.beginPath(); g.moveTo(x, top); g.lineTo(x, bottom); g.stroke();
+    if (labels) { g.fillStyle = c.muted; g.fillText(fmtT(Math.round(t * 10) / 10), x, bottom + 4); }
+  }
+}
+function emptyCanvas(cv, h, msg) {
+  const { g, w } = setup(cv, h), c = colors();
+  g.fillStyle = c.muted; g.font = '13px ' + c.body; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(msg, w / 2, h / 2);
+}
+function clipPlot(g, w, h) { g.save(); g.beginPath(); g.rect(PAD_L - 6, 0, w - PAD_L - PAD_R + 12, h); g.clip(); }
+function waiting(D, what) { return D ? (D.live ? `Keep playing. ${what} appears after a few hits.` : `Not enough hits for ${what.toLowerCase()}.`) : 'Tap Listen and start playing.'; }
+
+function drawWave(D) {
+  const cv = $('#cWave');
+  if (!D) return emptyCanvas(cv, 120, 'Tap Listen and start playing.');
+  const { g, w, h } = setup(cv, 120), c = colors(), V = view(D), X = mapper(V, w), pk = D.pk;
+  const top = 14, bottom = h - 20, mid = (top + bottom) / 2, half = (bottom - top) / 2;
+  drawTimeGrid(g, w, V, top, bottom, c, true);
+  const pw = w - PAD_L - PAD_R, span = V.t1 - V.t0;
+  g.fillStyle = D.live ? c.feet : c.wave;
+  for (let px = 0; px < pw; px++) {
+    const b0 = Math.floor((V.t0 + px / pw * span) * BUCKETS), b1 = Math.max(b0 + 1, Math.floor((V.t0 + (px + 1) / pw * span) * BUCKETS));
+    if (b0 >= pk.min.length) break; if (b1 <= 0) continue;
+    let lo = 0, hi = 0; for (let b = Math.max(0, b0); b < b1 && b < pk.min.length; b++) { if (pk.min[b] < lo) lo = pk.min[b]; if (pk.max[b] > hi) hi = pk.max[b]; }
+    const y0 = mid - (hi / pk.amp) * half, y1 = mid - (lo / pk.amp) * half;
+    g.fillRect(PAD_L + px, y0, 1, Math.max(1, y1 - y0));
+  }
+  for (const o of D.onsets) { if (o.t < V.t0 || o.t > V.t1) continue; g.fillStyle = laneColor(c, o.lane); g.fillRect(X(o.t) - 1, 2, 2, 9); }
+}
+
+function drawLanes(D) {
+  const cv = $('#cLanes');
+  if (!D) { setup(cv, 1); return; }
+  const rows = D.split ? [['feet', 'Feet'], ['hands', 'Hands']] : [['all', 'Hits']];
+  const rh = 26, { g, w, h } = setup(cv, rows.length * rh + 6), c = colors(), V = view(D), X = mapper(V, w);
+  drawTimeGrid(g, w, V, 0, h, c, false);
+  let maxL = 1e-9; for (const o of D.onsets) maxL = Math.max(maxL, o.loud);
+  g.font = '12px ' + c.body; g.textBaseline = 'middle'; g.textAlign = 'left';
+  rows.forEach(([key, label], i) => {
+    const y = 3 + i * rh + rh / 2;
+    g.fillStyle = c.muted; g.fillText(label, 0, y);
+    g.strokeStyle = c.line; g.beginPath(); g.moveTo(PAD_L, y + 0.5); g.lineTo(w - PAD_R, y + 0.5); g.stroke();
+    clipPlot(g, w, h);
+    for (const o of D.onsets) {
+      if ((key !== 'all' && o.lane !== key) || o.t < V.t0 - 0.2 || o.t > V.t1) continue;
+      const r = 2.5 + 4 * Math.sqrt(o.loud / maxL), lit = D.live && D.duration - o.t < 0.15;
+      g.fillStyle = laneColor(c, o.lane); g.globalAlpha = lit ? 1 : 0.85;
+      g.beginPath(); g.arc(X(o.t), y, lit ? r + 3 : r, 0, Math.PI * 2); g.fill(); g.globalAlpha = 1;
+    }
+    g.restore();
+  });
+}
+
+function niceStep(range, target) { const raw = range / target, mag = Math.pow(10, Math.floor(Math.log10(raw))); for (const m of [1, 2, 5, 10]) if (m * mag >= raw) return m * mag; return 10 * mag; }
+
+function drawTempo(D) {
+  const cv = $('#cTempo'), r = D && D.all;
+  if (!r) return emptyCanvas(cv, 160, waiting(D, 'Tempo'));
+  const V = view(D), pts = r.series.filter((s) => s.t >= V.t0 - 1 && s.t <= V.t1);
+  if (pts.length < 2) return emptyCanvas(cv, 160, waiting(D, 'Tempo'));
+  const { g, w, h } = setup(cv, 160), c = colors(), X = mapper(V, w);
+  const top = 10, bottom = h - 20;
+  let lo = Infinity, hi = -Infinity; for (const s of pts) { lo = Math.min(lo, s.bpm); hi = Math.max(hi, s.bpm); }
+  lo = Math.min(lo, r.avgBpm); hi = Math.max(hi, r.avgBpm);
+  const padV = Math.max(4, (hi - lo) * 0.15); lo -= padV; hi += padV;
+  const step = niceStep(hi - lo, 4); lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  const Y = (b) => bottom - (b - lo) / (hi - lo) * (bottom - top);
+  drawTimeGrid(g, w, V, top, bottom, c, true);
+  g.font = '11px ' + c.mono; g.textAlign = 'right'; g.textBaseline = 'middle';
+  for (let b = lo; b <= hi + 1e-6; b += step) { const y = Math.round(Y(b)) + 0.5; g.strokeStyle = c.line; g.beginPath(); g.moveTo(PAD_L, y); g.lineTo(w - PAD_R, y); g.stroke(); g.fillStyle = c.muted; g.fillText(String(Math.round(b)), PAD_L - 6, y); }
+  const ya = Y(r.avgBpm); g.setLineDash([4, 4]); g.strokeStyle = c.muted; g.beginPath(); g.moveTo(PAD_L, ya); g.lineTo(w - PAD_R, ya); g.stroke(); g.setLineDash([]);
+  clipPlot(g, w, h);
+  const segs = []; let cur = [];
+  pts.forEach((s, i) => { if (i && s.t - pts[i - 1].t > 2.6) { segs.push(cur); cur = []; } cur.push(s); }); segs.push(cur);
+  for (const seg of segs) {
+    if (!seg.length) continue;
+    const path = () => { g.beginPath(); seg.forEach((s, i) => { const x = X(s.t), y = Y(s.bpm); i ? g.lineTo(x, y) : g.moveTo(x, y); }); };
+    path(); g.lineTo(X(seg[seg.length - 1].t), bottom); g.lineTo(X(seg[0].t), bottom); g.closePath();
+    g.fillStyle = c.feet; g.globalAlpha = 0.12; g.fill(); g.globalAlpha = 1;
+    path(); g.strokeStyle = c.feet; g.lineWidth = 2; g.stroke(); g.lineWidth = 1;
+  }
+  const mark = D.live ? pts[pts.length - 1] : pts.reduce((a, s) => (s.full && s.bpm >= (a ? a.bpm : 0) ? s : a), null);
+  if (mark) { g.fillStyle = c.feet; g.beginPath(); g.arc(X(mark.t), Y(mark.bpm), 4, 0, Math.PI * 2); g.fill(); g.strokeStyle = c.surface; g.lineWidth = 2; g.stroke(); g.lineWidth = 1; }
+  g.restore();
+  g.font = '11px ' + c.mono; g.textAlign = 'left'; g.textBaseline = 'bottom'; g.fillStyle = c.muted; g.fillText('avg ' + Math.round(r.avgBpm), PAD_L + 4, ya - 3);
+}
+
+function drawTiming(D) {
+  const cv = $('#cTiming'), r = D && D.all;
+  if (!r) return emptyCanvas(cv, 140, waiting(D, 'Timing'));
+  const { g, w, h } = setup(cv, 140), c = colors(), V = view(D), X = mapper(V, w);
+  const top = 10, bottom = h - 20, mid = (top + bottom) / 2;
+  const lim = Math.min(250, Math.max(40, Math.ceil(pct(r.ok.map((o) => Math.abs(o.dev) * 1000), 97) * 1.25 / 10) * 10));
+  const Y = (ms) => mid - (ms / lim) * (bottom - top) / 2;
+  drawTimeGrid(g, w, V, top, bottom, c, true);
+  g.fillStyle = c.line; g.globalAlpha = 0.6; g.fillRect(PAD_L, Y(r.jitterMs), w - PAD_L - PAD_R, Y(-r.jitterMs) - Y(r.jitterMs)); g.globalAlpha = 1;
+  g.strokeStyle = c.muted; g.beginPath(); g.moveTo(PAD_L, Math.round(mid) + 0.5); g.lineTo(w - PAD_R, Math.round(mid) + 0.5); g.stroke();
+  g.font = '11px ' + c.mono; g.textAlign = 'right'; g.textBaseline = 'middle'; g.fillStyle = c.muted;
+  g.fillText('+' + lim, PAD_L - 6, Y(lim) + 4); g.fillText('0', PAD_L - 6, mid); g.fillText('−' + lim, PAD_L - 6, Y(-lim) - 4);
+  g.textAlign = 'left'; g.fillText('late', PAD_L + 4, top + 6); g.fillText('early', PAD_L + 4, bottom - 6);
+  const vis = r.ok.filter((o) => o.t >= V.t0 && o.t <= V.t1);
+  const bw = Math.max(2, Math.min(5, (w - PAD_L - PAD_R) / Math.max(1, vis.length) * 0.5));
+  for (const o of vis) {
+    const ms = Math.max(-lim, Math.min(lim, o.dev * 1000)), x = X(o.t), y = Y(ms);
+    g.fillStyle = laneColor(c, o.lane); g.fillRect(x - bw / 2, Math.min(y, mid), bw, Math.max(1, Math.abs(y - mid)));
+  }
+  g.textAlign = 'right'; g.textBaseline = 'top'; g.fillStyle = c.muted; g.fillText('ms', PAD_L - 6, bottom + 4);
+}
+
+function drawHist(D) {
+  const cv = $('#cHist'), r = D && D.all;
+  if (!r) return emptyCanvas(cv, 140, waiting(D, 'Gaps'));
+  const { g, w, h } = setup(cv, 140), c = colors();
+  const top = 16, bottom = h - 20, gaps = r.items.map((o) => o.ioi).filter((x) => x < 2.5);
+  const xmax = Math.min(2.5, Math.max(r.u * 2.6, pct(gaps, 97) * 1.15));
+  const XG = (s) => PAD_L + (s / xmax) * (w - PAD_L - PAD_R);
+  const nb = Math.max(20, Math.min(90, Math.floor((w - PAD_L - PAD_R) / 6)));
+  const bins = new Array(nb).fill(0); for (const x of gaps) if (x < xmax) bins[Math.floor(x / xmax * nb)]++;
+  const mx = Math.max(1, ...bins), bw = (w - PAD_L - PAD_R) / nb;
+  g.strokeStyle = c.line; g.beginPath(); g.moveTo(PAD_L, bottom + 0.5); g.lineTo(w - PAD_R, bottom + 0.5); g.stroke();
+  g.font = '11px ' + c.mono; g.textBaseline = 'bottom'; g.textAlign = 'center';
+  for (const m of [0.5, 1, 2, 3, 4]) {
+    const s = m * r.u; if (s > xmax) continue; const x = Math.round(XG(s)) + 0.5;
+    g.setLineDash([3, 3]); g.strokeStyle = c.muted; g.beginPath(); g.moveTo(x, top); g.lineTo(x, bottom); g.stroke(); g.setLineDash([]);
+    g.fillStyle = c.muted; g.fillText(m === 0.5 ? '½' : m === 1 ? '1 beat' : String(m), x, top - 2);
+  }
+  g.fillStyle = c.ink;
+  bins.forEach((v, i) => { if (!v) return; const bh = (v / mx) * (bottom - top - 4); g.fillRect(PAD_L + i * bw + 0.5, bottom - bh, Math.max(1, bw - 1), bh); });
+  const stepMs = niceStep(xmax * 1000, Math.max(3, Math.floor((w - PAD_L - PAD_R) / 80)));
+  g.textBaseline = 'top'; g.fillStyle = c.muted;
+  for (let ms = 0; ms <= xmax * 1000 + 1e-6; ms += stepMs) g.fillText(String(ms), XG(ms / 1000), bottom + 4);
+  g.textAlign = 'right'; g.fillText('ms', PAD_L - 6, bottom + 4);
+}
+
+function drawAll() { const D = current(); drawWave(D); drawLanes(D); drawTempo(D); drawTiming(D); drawHist(D); }
+function renderAll() { const D = current(); renderNow(D); renderStats(D); renderLanes(D); drawAll(); }
+
+// ---------- listening ----------
+async function start() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.isSecureContext) { notice(NO_MIC, 'warn'); return; }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!state.ctx) state.ctx = new AC();
+  const ctx = state.ctx; ctx.resume();
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  } catch (e) { notice(e && e.name === 'NotAllowedError' ? DENIED : 'The microphone could not be opened: ' + (e && e.message || e), 'warn'); return; }
+  const E = createEngine(ctx.sampleRate);
+  const src = ctx.createMediaStreamSource(stream);
+  const proc = ctx.createScriptProcessor(1024, 1, 1);
+  const L = { E, src, proc, stream, data: snapshot(E, true), lastAt: 0, lastVersion: -1, dirty: true, wake: null };
+  proc.onaudioprocess = (e) => { e.outputBuffer.getChannelData(0).fill(0); if (state.live === L) E.push(e.inputBuffer.getChannelData(0)); };
+  src.connect(proc); proc.connect(ctx.destination); // the processor only runs while connected; it outputs silence
+  state.live = L; state.last = null;
+  stream.getTracks().forEach((t) => { t.onended = () => { if (state.live === L) { stop(); notice('The microphone stopped (another app may have taken it). Tap Listen to start again.', 'warn'); } }; });
+  await keepAwake();
+  notice(null);
+  $('#listen').classList.add('on'); $('#listenLabel').textContent = 'Stop';
+  $('#status').textContent = 'Listening · ' + (ctx.sampleRate / 1000) + ' kHz';
+  requestAnimationFrame(frame);
+}
+function stop() {
+  const L = state.live; if (!L) return;
+  state.live = null;
+  try { L.src.disconnect(); L.proc.disconnect(); } catch (e) {}
+  L.stream.getTracks().forEach((t) => { t.onended = null; t.stop(); });
+  try { L.wake && L.wake.release(); } catch (e) {}
+  state.wake = null;
+  L.E.finish();
+  state.lastE = L.E;
+  state.last =L.E.onsets.length || L.E.n ? snapshot(L.E, false) : null;
+  $('#listen').classList.remove('on'); $('#listenLabel').textContent = 'Listen';
+  $('#beat').className = 'beat';
+  $('#status').textContent = state.last ? 'Session · ' + clock(state.last.duration) : 'Ready';
+  renderAll();
+}
+async function keepAwake() {
+  try { if (navigator.wakeLock && state.live) state.live.wake = await navigator.wakeLock.request('screen'); } catch (e) {}
+}
+function frame(ts) {
+  const L = state.live; if (!L) return;
+  const E = L.E;
+  if (L.dirty || E.version !== L.lastVersion || ts - L.lastAt > 250) {
+    L.data = snapshot(E, true); L.lastVersion = E.version; L.dirty = false; L.lastAt = ts;
+    renderStats(L.data); renderLanes(L.data); drawTempo(L.data); drawTiming(L.data); drawHist(L.data);
+  } else L.data.duration = E.time();
+  renderNow(L.data);
+  const lastHit = E.onsets[E.onsets.length - 1];
+  $('#beat').className = 'beat' + (lastHit && E.time() - lastHit.t < 0.12 ? ' ' + lastHit.lane : '');
+  drawWave(L.data); drawLanes(L.data);
+  requestAnimationFrame(frame);
+}
+
+// ---------- wiring ----------
+$('#listen').addEventListener('click', () => { if (state.live) stop(); else start(); });
+$('#sens').addEventListener('input', (e) => { state.sens = +e.target.value; if (state.live) state.live.dirty = true; });
+$('#split').addEventListener('change', (e) => {
+  state.splitMode = e.target.value;
+  if (state.live) state.live.dirty = true;
+  else if (state.lastE) { state.last = snapshot(state.lastE, false); renderAll(); }
+});
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { if (state.live) { keepAwake(); state.ctx && state.ctx.resume(); } drawAll(); } });
+let rz; new ResizeObserver(() => { clearTimeout(rz); rz = setTimeout(drawAll, 60); }).observe(document.querySelector('.wrap'));
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawAll); } catch (e) {}
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawAll);
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+renderAll();
+})();
+</script>
+</body>
+</html>
