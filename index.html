@@ -95,6 +95,16 @@ canvas { display: block; }
 .lane .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
 .lane .v { font-family: var(--mono); font-size: 18px; font-variant-numeric: tabular-nums; }
 
+.history { width: 100%; border-collapse: collapse; border-top: 2px solid var(--ink); font-variant-numeric: tabular-nums; }
+.history th { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); text-align: left; padding: 8px 8px 6px 0; border-bottom: 1px solid var(--line); }
+.history td { padding: 8px 8px 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.history .n { text-align: right; font-family: var(--mono); font-size: 16px; white-space: nowrap; }
+.history th.n { font-family: var(--body); font-size: 11px; }
+.history .when { display: block; }
+.history .s { display: block; font-size: 12px; color: var(--muted); }
+.history .pill { display: block; margin: 3px 0 0 auto; font-family: var(--body); }
+button.link { font: 600 13px var(--body); color: var(--feet); background: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+
 .how { border-top: 1px solid var(--line); padding-top: 14px; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
 .how p { margin: 0; max-width: 75ch; }
 .how b { color: var(--ink); font-weight: 600; }
@@ -162,6 +172,15 @@ canvas { display: block; }
     <h2>Gaps between hits</h2>
     <div class="cv"><canvas id="cHist" aria-label="Histogram of gaps between hits"></canvas></div>
     <p class="cap">A steady player makes tall, narrow spikes on the dashed beat lines. Spikes at 2 or ½ are rests or doubled-up hits.</p>
+  </section>
+
+  <section class="panel" aria-label="Past sessions">
+    <div class="panel-head"><h2>History</h2><button id="export" type="button" class="link" hidden>Export</button></div>
+    <table class="history" id="historyTable" hidden>
+      <thead><tr><th>Session</th><th class="n">Tempo</th><th class="n">Steady</th><th class="n">Spread ms</th></tr></thead>
+      <tbody id="historyRows"></tbody>
+    </table>
+    <p class="cap" id="historyCap"></p>
   </section>
 
   <footer class="how">
@@ -341,6 +360,51 @@ function snapshot(E, live) {
   if (all) { const byT = new Map(onsets.map((o) => [o.t, o.lane])); all.items.forEach((it) => { it.lane = byT.get(it.t) || 'all'; }); }
   return { onsets, split, all, lanes, pk: { min: E.pmin, max: E.pmax, amp: E.amp }, duration: E.time(), live };
 }
+
+// ---------- session history ----------
+// One small record per session (a few hundred bytes), kept on the phone as JSON lines: one session per line, only ever appended.
+function steadyLabel(s) { return s >= 90 ? ['good', 'Metronome'] : s >= 75 ? ['good', 'Steady'] : s >= 55 ? ['ok', 'A bit loose'] : ['warn', 'Wobbly']; }
+function r1(x) { return Math.round(x * 10) / 10; }
+function laneSummary(r, hits) {
+  return { hits, avgBpm: r ? r1(r.avgBpm) : null, steadiness: r ? r.steadiness : null, spreadMs: r ? Math.round(r.jitterMs) : null };
+}
+// A session counts once it has enough hits to be analyzed (the same rule that fills in the Session numbers).
+function summarizeSession(D, startedAt, settings) {
+  const r = D && D.all; if (!r) return null;
+  const rec = {
+    v: 1, start: new Date(startedAt).toISOString(), durationS: r1(D.duration), hits: r.hits, pauses: r.pauses,
+    avgBpm: r1(r.avgBpm), peakBpm: r1(r.peakBpm), lowBpm: r1(r.lowBpm), driftBpm: r1(r.drift),
+    steadiness: r.steadiness, spreadMs: Math.round(r.jitterMs),
+    sensitivity: settings.sens, sort: settings.splitMode,
+  };
+  if (D.split) {
+    rec.lanes = {};
+    for (const l of ['feet', 'hands']) rec.lanes[l] = laneSummary(D.lanes[l], D.onsets.filter((o) => o.lane === l).length);
+  }
+  return rec;
+}
+function isSession(o) {
+  return !!o && typeof o === 'object' && typeof o.start === 'string' && !isNaN(Date.parse(o.start))
+    && Number.isFinite(o.avgBpm) && Number.isFinite(o.steadiness) && Number.isFinite(o.spreadMs);
+}
+function appendHistory(text, rec) { const t = text || ''; return (t && !t.endsWith('\n') ? t + '\n' : t) + JSON.stringify(rec) + '\n'; }
+// Skips blank and damaged lines, so one bad write never loses the rest.
+function parseHistory(text) {
+  const out = [];
+  for (const line of String(text || '').split('\n')) {
+    if (!line.trim()) continue;
+    try { const o = JSON.parse(line); if (isSession(o)) out.push(o); } catch (e) {}
+  }
+  return out;
+}
+function newestFirst(list) { return list.slice().sort((a, b) => Date.parse(b.start) - Date.parse(a.start)); }
+function historyRow(rec) {
+  const [cls, word] = steadyLabel(rec.steadiness);
+  return {
+    bpm: String(Math.round(rec.avgBpm)), steady: String(rec.steadiness), cls, word, spread: '±' + rec.spreadMs,
+    detail: clock(rec.durationS || 0) + (Number.isFinite(rec.hits) ? ` · ${rec.hits} hits` : ''),
+  };
+}
 function current() { return state.live ? state.live.data : state.last; }
 function view(D) {
   if (D && D.live) { const t1 = Math.max(LIVE_WINDOW, D.duration); return { t0: t1 - LIVE_WINDOW, t1 }; }
@@ -359,7 +423,7 @@ function renderStats(D) {
   set('#sPeak', Math.round(r.peakBpm) + '<small>bpm</small>');
   set('#sPeakS', 'slowest stretch ' + Math.round(r.lowBpm));
   set('#sSteady', r.steadiness + '<small>/ 100</small>');
-  const [cls, word] = r.steadiness >= 90 ? ['good', 'Metronome'] : r.steadiness >= 75 ? ['good', 'Steady'] : r.steadiness >= 55 ? ['ok', 'A bit loose'] : ['warn', 'Wobbly'];
+  const [cls, word] = steadyLabel(r.steadiness);
   set('#sSteadyS', `<span class="pill ${cls}">${word}</span>`);
   set('#sJit', '±' + Math.round(r.jitterMs) + '<small>ms</small>');
   const d = r.drift;
@@ -391,6 +455,37 @@ function renderLanes(D) {
     box.append(card);
   }
   box.hidden = !lanes.length;
+}
+
+// ---------- history storage ----------
+const HISTORY_KEY = 'tabletop-tempo.history';
+function readHistoryText() { try { return localStorage.getItem(HISTORY_KEY) || ''; } catch (e) { return ''; } }
+function saveSession(rec) {
+  try { localStorage.setItem(HISTORY_KEY, appendHistory(readHistoryText(), rec)); } catch (e) { return false; }
+  try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
+  return true;
+}
+function renderHistory() {
+  const text = readHistoryText(), list = newestFirst(parseHistory(text)), body = $('#historyRows');
+  body.innerHTML = '';
+  for (const rec of list) {
+    const d = new Date(rec.start), row = historyRow(rec), tr = document.createElement('tr');
+    const when = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ', ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    tr.innerHTML = `<td><span class="when"></span><span class="s"></span></td><td class="n">${row.bpm}</td>`
+      + `<td class="n">${row.steady} <span class="pill ${row.cls}">${row.word}</span></td><td class="n">${row.spread}</td>`;
+    tr.querySelector('.when').textContent = when; tr.querySelector('.s').textContent = row.detail;
+    body.append(tr);
+  }
+  $('#historyTable').hidden = !list.length; $('#export').hidden = !list.length;
+  $('#historyCap').textContent = list.length
+    ? `${list.length} session${list.length > 1 ? 's' : ''}, newest first. Kept on this phone only, in this browser.`
+    : 'Each session is saved here when you tap Stop, once it has enough hits to score.';
+}
+function exportHistory() {
+  const text = readHistoryText(); if (!text) return;
+  const a = document.createElement('a'), url = URL.createObjectURL(new Blob([text], { type: 'application/x-ndjson' }));
+  a.href = url; a.download = 'tabletop-tempo-history-' + new Date().toISOString().slice(0, 10) + '.jsonl';
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // ---------- drawing ----------
@@ -557,7 +652,7 @@ async function start() {
   const E = createEngine(ctx.sampleRate);
   const src = ctx.createMediaStreamSource(stream);
   const proc = ctx.createScriptProcessor(1024, 1, 1);
-  const L = { E, src, proc, stream, data: snapshot(E, true), lastAt: 0, lastVersion: -1, dirty: true, wake: null };
+  const L = { E, src, proc, stream, data: snapshot(E, true), startedAt: Date.now(), lastAt: 0, lastVersion: -1, dirty: true, wake: null };
   proc.onaudioprocess = (e) => { e.outputBuffer.getChannelData(0).fill(0); if (state.live === L) E.push(e.inputBuffer.getChannelData(0)); };
   src.connect(proc); proc.connect(ctx.destination); // the processor only runs while connected; it outputs silence
   state.live = L; state.last = null;
@@ -578,6 +673,9 @@ function stop() {
   L.E.finish();
   state.lastE = L.E;
   state.last =L.E.onsets.length || L.E.n ? snapshot(L.E, false) : null;
+  const rec = summarizeSession(state.last, L.startedAt, state);
+  if (rec && !saveSession(rec)) notice("This session couldn't be saved to the history: the browser's storage is full or blocked.", 'warn');
+  renderHistory();
   $('#listen').classList.remove('on'); $('#listenLabel').textContent = 'Listen';
   $('#beat').className = 'beat';
   $('#status').textContent = state.last ? 'Session · ' + clock(state.last.duration) : 'Ready';
@@ -613,7 +711,9 @@ let rz; new ResizeObserver(() => { clearTimeout(rz); rz = setTimeout(drawAll, 60
 try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawAll); } catch (e) {}
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawAll);
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+$('#export').addEventListener('click', exportHistory);
 renderAll();
+renderHistory();
 })();
 </script>
 </body>

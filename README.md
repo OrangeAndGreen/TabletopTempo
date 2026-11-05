@@ -7,6 +7,7 @@ Open https://orangeandgreen.github.io/TabletopTempo/ in Chrome on the phone, tap
 
 - **Live:** current BPM (last 8 hits), steadiness over the last 16 hits, how early or late the last hit was, and scrolling charts of the last 20 seconds.
 - **After Stop:** the whole session: average and fastest tempo, steadiness score, timing spread, drift, hands vs. feet lanes and a histogram of gaps.
+- **History:** each session that has enough hits to score is saved when you tap Stop (start time, length, hits, average, fastest and slowest tempo, drift, steadiness, timing spread, settings, and per-lane numbers when hands and feet are split). The list shows past sessions newest first, and **Export** downloads them as a `.jsonl` file. The history lives in this browser's local storage on the phone only; clearing the site's data clears it.
 - Nothing is recorded or uploaded. Audio is analyzed in the browser as it arrives and thrown away.
 
 A single static page (`index.html`), no build step. GitHub Pages serves `master`.
@@ -20,3 +21,5 @@ A single static page (`index.html`), no build step. GitHub Pages serves `master`
 ## Testing
 
 `node test/engine.test.js` runs the engine on a synthesized take and checks hit count, lane sorting, tempo, chunk-size independence and that pure noise gives no hits.
+
+`node test/history.test.js` checks the session summary that goes into the history, and the storage format: one JSON object per line, only ever appended, with damaged lines skipped on reading.
