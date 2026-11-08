@@ -54,7 +54,7 @@ h2 { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: u
 #listen.on .dot { border-radius: 2px; animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { #listen.on .dot { animation: none; } }
-button:focus-visible, select:focus-visible, input[type=range]:focus-visible { outline: 2px solid var(--feet); outline-offset: 3px; }
+button:focus-visible, select:focus-visible, input[type=range]:focus-visible, input[type=number]:focus-visible { outline: 2px solid var(--feet); outline-offset: 3px; }
 .beat { width: 56px; height: 56px; border-radius: 50%; border: 2px solid var(--line); flex: none; }
 .beat.feet { background: var(--feet); border-color: var(--feet); }
 .beat.hands { background: var(--hands); border-color: var(--hands); }
@@ -66,8 +66,13 @@ button:focus-visible, select:focus-visible, input[type=range]:focus-visible { ou
 .side .mid { font-family: var(--display); font-weight: 800; font-size: 32px; line-height: 1; font-variant-numeric: tabular-nums; }
 .opts { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; border-top: 1px solid var(--line); padding-top: 12px; }
 label.opt { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
-select { font: 14px var(--body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+select, input[type=number] { font: 14px var(--body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
 input[type=range] { accent-color: var(--feet); width: 120px; }
+input[type=number] { width: 4.5em; font-variant-numeric: tabular-nums; }
+select:disabled, input:disabled { opacity: .55; }
+/* The count-in: the whole live card flashes on each of the four beats, then stays still */
+.deck { transition: background-color .12s ease-out, border-color .12s ease-out; }
+.deck.pulse { background: color-mix(in srgb, var(--feet) 22%, var(--surface)); border-color: var(--feet); transition: none; }
 .notice { font-size: 14px; border-left: 3px solid var(--ok); padding: 6px 10px; background: var(--bg); border-radius: 0 6px 6px 0; }
 .notice.warn { border-color: var(--warn); }
 
@@ -130,6 +135,10 @@ button.link { font: 600 13px var(--body); color: var(--feet); background: none; 
     </div>
     <div class="notice" id="notice" hidden></div>
     <div class="opts">
+      <label class="opt" for="mode">Mode
+        <select id="mode"><option value="free">Free</option><option value="set">Set tempo</option></select>
+      </label>
+      <label class="opt" for="bpm" id="bpmOpt" hidden>Target <input id="bpm" type="number" inputmode="numeric" min="40" max="200" step="1" value="100"> bpm</label>
       <label class="opt" for="sens">Sensitivity <input id="sens" type="range" min="1" max="10" step="1" value="5"></label>
       <label class="opt" for="split">Sort hits
         <select id="split"><option value="auto">Hands and feet</option><option value="one">One lane</option></select>
@@ -151,7 +160,7 @@ button.link { font: 600 13px var(--body); color: var(--feet); background: none; 
   <section class="panel">
     <h2>Early and late</h2>
     <div class="cv"><canvas id="cTiming" aria-label="Timing deviation of each hit"></canvas></div>
-    <p class="cap">Each bar is one hit against the beat you were keeping at that moment. Up is late, down is early. The shaded band is your typical miss.</p>
+    <p class="cap" id="timingCap">Each bar is one hit against the beat you were keeping at that moment. Up is late, down is early. The shaded band is your typical miss.</p>
   </section>
 
   <section class="panel">
@@ -163,6 +172,18 @@ button.link { font: 600 13px var(--body); color: var(--feet); background: none; 
       <div class="stat"><span class="k">Timing spread</span><span class="v" id="sJit">–</span><span class="s">typical miss, either way</span></div>
       <div class="stat"><span class="k">Drift</span><span class="v" id="sDrift">–</span><span class="s" id="sDriftS">start to finish</span></div>
       <div class="stat"><span class="k">Hits</span><span class="v" id="sHits">–</span><span class="s" id="sHitsS"></span></div>
+    </div>
+  </section>
+
+  <section class="panel" id="targetPanel" hidden>
+    <h2>Against the target</h2>
+    <div class="stats" aria-label="Results against the target tempo">
+      <div class="stat"><span class="k">Target</span><span class="v" id="tBpm">–</span><span class="s" id="tBpmS"></span></div>
+      <div class="stat"><span class="k">Drift from target</span><span class="v" id="tMean">–</span><span class="s" id="tMeanS">average offset</span></div>
+      <div class="stat"><span class="k">Spread</span><span class="v" id="tSpread">–</span><span class="s">typical miss around your drift</span></div>
+      <div class="stat"><span class="k">Off the grid</span><span class="v" id="tMiss">–</span><span class="s" id="tMissS">typical miss, either way</span></div>
+      <div class="stat"><span class="k">Trend</span><span class="v" id="tTrend">–</span><span class="s" id="tTrendS">per minute</span></div>
+      <div class="stat"><span class="k">Hits scored</span><span class="v" id="tHits">–</span><span class="s" id="tHitsS">after the count-in</span></div>
     </div>
   </section>
 
@@ -186,6 +207,7 @@ button.link { font: 600 13px var(--body); color: var(--feet); background: none; 
   <footer class="how">
     <p><b>Setup.</b> Put the phone on the floor or a chair, not on the table you slap, and tap Listen. Nothing is recorded or sent anywhere: the sound is analyzed on the phone as it arrives and then thrown away.</p>
     <p><b>How hits are found.</b> The sound is split into a low band (under 180 Hz, where stomps live) and a high band (over 1.2 kHz, where slaps live). A hit is a sudden jump in either band that stands clear of the room's background noise. Each hit is confirmed about 50 ms after it lands. Hits are sorted into hands and feet by how their energy divides between the bands.</p>
+    <p><b>Set tempo.</b> Pick Set tempo and a target, then tap Listen. The card flashes four beats at that tempo and goes still; come in on the next beat and keep it. Every hit is matched to the nearest beat of that grid and shown as early or late in ms, so you see drift from the target, not just from your own tempo. The count-in is silent on purpose: a click would be heard as a hit. Hits during the count-in are not scored.</p>
     <p><b>How steadiness is scored.</b> The app finds the beat unit you are playing, follows it as you speed up or slow down, and checks each gap against it, allowing rests and doubled-up hits. 100 minus four times the average miss in percent gives the score: a 2.5% average miss scores 90. Gaps over 2.5 seconds count as pauses.</p>
   </footer>
 </div>
@@ -194,7 +216,7 @@ button.link { font: 600 13px var(--body); color: var(--feet); background: none; 
 (() => {
 const $ = (s) => document.querySelector(s);
 const LIVE_WINDOW = 20, BUCKETS = 100; // seconds shown while listening, waveform buckets per second
-const state = { live: null, last: null, ctx: null, sens: 5, splitMode: 'auto' };
+const state = { live: null, last: null, ctx: null, sens: 5, splitMode: 'auto', mode: 'free', bpm: 100 };
 const NO_MIC = "This browser can't reach the microphone. Open the page in Chrome over https.";
 const DENIED = "The microphone is blocked for this page. Allow it in Chrome's site settings (the icon left of the address), then tap Listen again.";
 
@@ -354,11 +376,75 @@ function analyzeTimes(times) {
   };
 }
 
-function snapshot(E, live) {
+// ---------- set tempo ----------
+// A grid of beats at the target tempo. Beat 0 is the first count-in pulse; the grid carries on after the pulses stop.
+// Times are seconds on the engine's clock. Hits count from half a beat before the first silent beat.
+const BPM_MIN = 40, BPM_MAX = 200, BPM_DEFAULT = 100, COUNT_IN = 4;
+function clampBpm(v) {
+  const n = Math.round(Number(v));
+  return v === '' || v == null || !Number.isFinite(n) ? BPM_DEFAULT : Math.min(BPM_MAX, Math.max(BPM_MIN, n));
+}
+function makeGrid(start, bpm) { const interval = 60 / bpm; return { start, bpm, interval, from: start + (COUNT_IN - 0.5) * interval }; }
+// Each hit's nearest beat and how far off it landed, in ms: early is negative, late is positive.
+// A hit more than half a beat off snaps to the next beat, so a player who drifts a whole beat away reads as on time again.
+function scoreHits(times, grid) {
+  const out = [];
+  for (const t of times) {
+    if (t < grid.from) continue;
+    const beat = Math.round((t - grid.start) / grid.interval);
+    out.push({ t, beat, offMs: (t - (grid.start + beat * grid.interval)) * 1000 });
+  }
+  return out;
+}
+// drift = mean offset; spread = typical distance from that mean; miss = typical distance from the grid itself;
+// trend = how the offset moves per minute (a straight line through it), which also gives the tempo actually played.
+// The trend uses unwrapped offsets: a jump of over half a beat from the previous hit means the player slid into the
+// next beat, so the line keeps counting instead of snapping back (a player 5 bpm fast still reads as 5 bpm fast).
+function unwrapOffsets(scored, interval) {
+  const I = interval * 1000, out = [];
+  let shift = 0;
+  for (const s of scored) {
+    let v = s.offMs + shift;
+    if (out.length) { const prev = out[out.length - 1]; while (v - prev > I / 2) { v -= I; shift -= I; } while (v - prev < -I / 2) { v += I; shift += I; } }
+    out.push(v);
+  }
+  return out;
+}
+function gridSummary(scored, grid) {
+  const n = scored.length; if (n < 4) return null;
+  const offs = scored.map((s) => s.offMs), meanMs = mean(offs), un = unwrapOffsets(scored, grid.interval), mu = mean(un);
+  const mt = mean(scored.map((s) => s.t));
+  let sxy = 0, sxx = 0; scored.forEach((s, i) => { sxy += (s.t - mt) * (un[i] - mu); sxx += (s.t - mt) ** 2; });
+  const slope = sxx ? sxy / sxx : 0; // ms per second
+  return {
+    hits: n, bpm: grid.bpm, meanMs,
+    spreadMs: pct(offs.map((o) => Math.abs(o - meanMs)), 50),
+    missMs: pct(offs.map((o) => Math.abs(o)), 50),
+    early: offs.filter((o) => o < 0).length, late: offs.filter((o) => o > 0).length,
+    trendMsPerMin: slope * 60,
+    playedBpm: grid.bpm * (1 - slope / 1000),
+  };
+}
+// '+12' / 'ms late', '−8' / 'ms early', '0' / 'ms, on it'
+function fmtOffset(ms) {
+  const r = Math.round(ms);
+  return [(r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r), r > 0 ? 'ms late' : r < 0 ? 'ms early' : 'ms, on it'];
+}
+function driftWord(meanMs) { return Math.abs(meanMs) < 10 ? 'on the grid' : meanMs > 0 ? 'late on average' : 'early on average'; }
+function trendWord(perMin) { return Math.abs(perMin) < 20 ? 'held the grid' : perMin > 0 ? 'falling behind' : 'pulling ahead'; }
+
+function snapshot(E, live, grid) {
   const onsets = E.onsets, split = splitLanes(onsets), all = analyzeTimes(onsets.map((o) => o.t)), lanes = {};
   if (split) for (const l of ['feet', 'hands']) lanes[l] = analyzeTimes(onsets.filter((o) => o.lane === l).map((o) => o.t));
-  if (all) { const byT = new Map(onsets.map((o) => [o.t, o.lane])); all.items.forEach((it) => { it.lane = byT.get(it.t) || 'all'; }); }
-  return { onsets, split, all, lanes, pk: { min: E.pmin, max: E.pmax, amp: E.amp }, duration: E.time(), live };
+  const byT = new Map(onsets.map((o) => [o.t, o.lane]));
+  if (all) all.items.forEach((it) => { it.lane = byT.get(it.t) || 'all'; });
+  let target = null;
+  if (grid) {
+    const scored = scoreHits(onsets.map((o) => o.t), grid);
+    scored.forEach((s) => { s.lane = byT.get(s.t) || 'all'; });
+    target = { grid, scored, sum: gridSummary(scored, grid) };
+  }
+  return { onsets, split, all, lanes, target, pk: { min: E.pmin, max: E.pmax, amp: E.amp }, duration: E.time(), live };
 }
 
 // ---------- session history ----------
@@ -381,6 +467,8 @@ function summarizeSession(D, startedAt, settings) {
     rec.lanes = {};
     for (const l of ['feet', 'hands']) rec.lanes[l] = laneSummary(D.lanes[l], D.onsets.filter((o) => o.lane === l).length);
   }
+  const ts = D.target && D.target.sum;
+  if (ts) rec.target = { bpm: ts.bpm, hits: ts.hits, meanMs: Math.round(ts.meanMs), spreadMs: Math.round(ts.spreadMs), trendMsPerMin: Math.round(ts.trendMsPerMin), playedBpm: r1(ts.playedBpm) };
   return rec;
 }
 function isSession(o) {
@@ -402,7 +490,8 @@ function historyRow(rec) {
   const [cls, word] = steadyLabel(rec.steadiness);
   return {
     bpm: String(Math.round(rec.avgBpm)), steady: String(rec.steadiness), cls, word, spread: '±' + rec.spreadMs,
-    detail: clock(rec.durationS || 0) + (Number.isFinite(rec.hits) ? ` · ${rec.hits} hits` : ''),
+    detail: clock(rec.durationS || 0) + (Number.isFinite(rec.hits) ? ` · ${rec.hits} hits` : '')
+      + (rec.target && Number.isFinite(rec.target.bpm) && Number.isFinite(rec.target.meanMs) ? ` · set ${rec.target.bpm}, ${fmtOffset(rec.target.meanMs).join(' ')}` : ''),
   };
 }
 function current() { return state.live ? state.live.data : state.last; }
@@ -437,10 +526,31 @@ function renderNow(D) {
   const fresh = D && D.live && last && D.duration - last.t <= 2.5;
   $('#lNow').textContent = r && fresh ? Math.round(r.nowBpm) : '–';
   $('#lSteady').textContent = r ? r.recentSteady : '–';
-  const lastOk = r && r.ok[r.ok.length - 1];
-  if (lastOk && fresh) { const ms = Math.round(lastOk.dev * 1000); $('#lMiss').textContent = (ms > 0 ? '+' : ms < 0 ? '−' : '') + Math.abs(ms); $('#lMissU').textContent = ms > 0 ? 'ms late' : ms < 0 ? 'ms early' : 'ms, on it'; }
+  // in set tempo mode the last hit is measured against the target grid, otherwise against the beat being kept
+  const sc = D && D.target ? D.target.scored : null, lastOk = sc ? sc[sc.length - 1] : r && r.ok[r.ok.length - 1];
+  const lastFresh = lastOk && (sc ? D.live && D.duration - lastOk.t <= 2.5 : fresh);
+  if (lastFresh) { const [v, u] = fmtOffset(sc ? lastOk.offMs : lastOk.dev * 1000); $('#lMiss').textContent = v; $('#lMissU').textContent = u; }
   else { $('#lMiss').textContent = '–'; $('#lMissU').textContent = 'ms'; }
   $('#lTime').textContent = clock(D ? D.duration : 0);
+}
+function renderTarget(D) {
+  const T = D && D.target, box = $('#targetPanel'), set = (id, v) => { $(id).innerHTML = v; };
+  box.hidden = !T;
+  $('#timingCap').textContent = T
+    ? 'Each bar is one hit against the target grid, from the first beat after the count-in. Up is late, down is early. The shaded band is your drift plus or minus your typical spread.'
+    : 'Each bar is one hit against the beat you were keeping at that moment. Up is late, down is early. The shaded band is your typical miss.';
+  if (!T) return;
+  const m = T.sum;
+  set('#tBpm', T.grid.bpm + '<small>bpm</small>');
+  set('#tBpmS', m ? 'you played about ' + Math.round(m.playedBpm) : '');
+  set('#tHits', String(T.scored.length));
+  if (!m) { ['#tMean', '#tSpread', '#tMiss', '#tTrend'].forEach((id) => set(id, '–')); set('#tMeanS', 'average offset'); set('#tTrendS', 'per minute'); set('#tHitsS', 'after the count-in'); return; }
+  const mv = fmtOffset(m.meanMs)[0];
+  set('#tMean', mv + '<small>ms</small>'); set('#tMeanS', driftWord(m.meanMs));
+  set('#tSpread', '±' + Math.round(m.spreadMs) + '<small>ms</small>');
+  set('#tMiss', Math.round(m.missMs) + '<small>ms</small>');
+  set('#tTrend', fmtOffset(m.trendMsPerMin)[0] + '<small>ms/min</small>'); set('#tTrendS', trendWord(m.trendMsPerMin));
+  set('#tHitsS', `${m.early} early, ${m.late} late`);
 }
 function renderLanes(D) {
   const box = $('#laneCards'), legend = $('#legend'); box.innerHTML = ''; legend.innerHTML = '';
@@ -589,23 +699,30 @@ function drawTempo(D) {
   g.font = '11px ' + c.mono; g.textAlign = 'left'; g.textBaseline = 'bottom'; g.fillStyle = c.muted; g.fillText('avg ' + Math.round(r.avgBpm), PAD_L + 4, ya - 3);
 }
 
+// Free mode: each hit against the beat being kept, band ±typical miss. Set tempo: each hit against the target grid, band drift ± spread.
+function timingPoints(D) {
+  const T = D && D.target;
+  if (T) return T.sum ? { pts: T.scored.map((s) => ({ t: s.t, ms: s.offMs, lane: s.lane })), lo: T.sum.meanMs - T.sum.spreadMs, hi: T.sum.meanMs + T.sum.spreadMs } : null;
+  const r = D && D.all;
+  return r ? { pts: r.ok.map((o) => ({ t: o.t, ms: o.dev * 1000, lane: o.lane })), lo: -r.jitterMs, hi: r.jitterMs } : null;
+}
 function drawTiming(D) {
-  const cv = $('#cTiming'), r = D && D.all;
-  if (!r) return emptyCanvas(cv, 140, waiting(D, 'Timing'));
+  const cv = $('#cTiming'), P = timingPoints(D);
+  if (!P) return emptyCanvas(cv, 140, D && D.target && D.live && !D.target.scored.length ? 'Watch the count-in, then come in on the next beat.' : waiting(D, 'Timing'));
   const { g, w, h } = setup(cv, 140), c = colors(), V = view(D), X = mapper(V, w);
   const top = 10, bottom = h - 20, mid = (top + bottom) / 2;
-  const lim = Math.min(250, Math.max(40, Math.ceil(pct(r.ok.map((o) => Math.abs(o.dev) * 1000), 97) * 1.25 / 10) * 10));
-  const Y = (ms) => mid - (ms / lim) * (bottom - top) / 2;
+  const lim = Math.min(D.target ? 500 : 250, Math.max(40, Math.ceil(pct(P.pts.map((o) => Math.abs(o.ms)), 97) * 1.25 / 10) * 10));
+  const Y = (ms) => mid - (Math.max(-lim, Math.min(lim, ms)) / lim) * (bottom - top) / 2;
   drawTimeGrid(g, w, V, top, bottom, c, true);
-  g.fillStyle = c.line; g.globalAlpha = 0.6; g.fillRect(PAD_L, Y(r.jitterMs), w - PAD_L - PAD_R, Y(-r.jitterMs) - Y(r.jitterMs)); g.globalAlpha = 1;
+  g.fillStyle = c.line; g.globalAlpha = 0.6; g.fillRect(PAD_L, Y(P.hi), w - PAD_L - PAD_R, Y(P.lo) - Y(P.hi)); g.globalAlpha = 1;
   g.strokeStyle = c.muted; g.beginPath(); g.moveTo(PAD_L, Math.round(mid) + 0.5); g.lineTo(w - PAD_R, Math.round(mid) + 0.5); g.stroke();
   g.font = '11px ' + c.mono; g.textAlign = 'right'; g.textBaseline = 'middle'; g.fillStyle = c.muted;
   g.fillText('+' + lim, PAD_L - 6, Y(lim) + 4); g.fillText('0', PAD_L - 6, mid); g.fillText('−' + lim, PAD_L - 6, Y(-lim) - 4);
   g.textAlign = 'left'; g.fillText('late', PAD_L + 4, top + 6); g.fillText('early', PAD_L + 4, bottom - 6);
-  const vis = r.ok.filter((o) => o.t >= V.t0 && o.t <= V.t1);
+  const vis = P.pts.filter((o) => o.t >= V.t0 && o.t <= V.t1);
   const bw = Math.max(2, Math.min(5, (w - PAD_L - PAD_R) / Math.max(1, vis.length) * 0.5));
   for (const o of vis) {
-    const ms = Math.max(-lim, Math.min(lim, o.dev * 1000)), x = X(o.t), y = Y(ms);
+    const x = X(o.t), y = Y(o.ms);
     g.fillStyle = laneColor(c, o.lane); g.fillRect(x - bw / 2, Math.min(y, mid), bw, Math.max(1, Math.abs(y - mid)));
   }
   g.textAlign = 'right'; g.textBaseline = 'top'; g.fillStyle = c.muted; g.fillText('ms', PAD_L - 6, bottom + 4);
@@ -637,7 +754,7 @@ function drawHist(D) {
 }
 
 function drawAll() { const D = current(); drawWave(D); drawLanes(D); drawTempo(D); drawTiming(D); drawHist(D); }
-function renderAll() { const D = current(); renderNow(D); renderStats(D); renderLanes(D); drawAll(); }
+function renderAll() { const D = current(); renderNow(D); renderStats(D); renderTarget(D); renderLanes(D); drawAll(); }
 
 // ---------- listening ----------
 async function start() {
@@ -652,15 +769,23 @@ async function start() {
   const E = createEngine(ctx.sampleRate);
   const src = ctx.createMediaStreamSource(stream);
   const proc = ctx.createScriptProcessor(1024, 1, 1);
-  const L = { E, src, proc, stream, data: snapshot(E, true), startedAt: Date.now(), lastAt: 0, lastVersion: -1, dirty: true, wake: null };
-  proc.onaudioprocess = (e) => { e.outputBuffer.getChannelData(0).fill(0); if (state.live === L) E.push(e.inputBuffer.getChannelData(0)); };
+  const L = { E, src, proc, stream, data: snapshot(E, true), startedAt: Date.now(), lastAt: 0, lastVersion: -1, dirty: true, wake: null,
+    bpm: state.mode === 'set' ? state.bpm : null, countAt: null, clockOff: Infinity };
+  proc.onaudioprocess = (e) => {
+    e.outputBuffer.getChannelData(0).fill(0);
+    if (state.live !== L) return;
+    E.push(e.inputBuffer.getChannelData(0));
+    // page clock minus engine clock; the smallest value seen is the one least delayed by callback scheduling
+    const off = performance.now() / 1000 - E.time(); if (off < L.clockOff) L.clockOff = off;
+  };
   src.connect(proc); proc.connect(ctx.destination); // the processor only runs while connected; it outputs silence
   state.live = L; state.last = null;
   stream.getTracks().forEach((t) => { t.onended = () => { if (state.live === L) { stop(); notice('The microphone stopped (another app may have taken it). Tap Listen to start again.', 'warn'); } }; });
   await keepAwake();
   notice(null);
   $('#listen').classList.add('on'); $('#listenLabel').textContent = 'Stop';
-  $('#status').textContent = 'Listening · ' + (ctx.sampleRate / 1000) + ' kHz';
+  $('#status').textContent = L.bpm ? 'Count-in · ' + L.bpm + ' bpm' : 'Listening · ' + (ctx.sampleRate / 1000) + ' kHz';
+  setControls();
   requestAnimationFrame(frame);
 }
 function stop() {
@@ -672,39 +797,61 @@ function stop() {
   state.wake = null;
   L.E.finish();
   state.lastE = L.E;
-  state.last =L.E.onsets.length || L.E.n ? snapshot(L.E, false) : null;
+  state.lastGrid = gridOf(L);
+  state.last = L.E.onsets.length || L.E.n ? snapshot(L.E, false, state.lastGrid) : null;
   const rec = summarizeSession(state.last, L.startedAt, state);
   if (rec && !saveSession(rec)) notice("This session couldn't be saved to the history: the browser's storage is full or blocked.", 'warn');
   renderHistory();
   $('#listen').classList.remove('on'); $('#listenLabel').textContent = 'Listen';
-  $('#beat').className = 'beat';
+  $('#beat').className = 'beat'; $('.deck').classList.remove('pulse');
+  setControls();
   $('#status').textContent = state.last ? 'Session · ' + clock(state.last.duration) : 'Ready';
   renderAll();
 }
 async function keepAwake() {
   try { if (navigator.wakeLock && state.live) state.live.wake = await navigator.wakeLock.request('screen'); } catch (e) {}
 }
+// The grid on the engine's clock: the count-in was timed on the page clock (ms), so shift it by the measured offset.
+function gridOf(L) { return L.bpm && L.countAt != null && Number.isFinite(L.clockOff) ? makeGrid(L.countAt / 1000 - L.clockOff, L.bpm) : null; }
 function frame(ts) {
   const L = state.live; if (!L) return;
   const E = L.E;
+  // Set tempo: once audio is flowing, flash four beats starting 0.8 s from now, then go still.
+  if (L.bpm && L.countAt == null && Number.isFinite(L.clockOff)) { L.countAt = performance.now() + 800; L.dirty = true; }
+  let count = 0, pulse = false;
+  if (L.countAt != null) {
+    const k = Math.floor((performance.now() - L.countAt) / (60000 / L.bpm));
+    if (k >= 0 && k < COUNT_IN) { count = k + 1; pulse = performance.now() - L.countAt - k * (60000 / L.bpm) < 110; }
+    if (k >= COUNT_IN && !L.countDone) { L.countDone = true; $('#status').textContent = 'Listening · target ' + L.bpm + ' bpm'; }
+  }
   if (L.dirty || E.version !== L.lastVersion || ts - L.lastAt > 250) {
-    L.data = snapshot(E, true); L.lastVersion = E.version; L.dirty = false; L.lastAt = ts;
-    renderStats(L.data); renderLanes(L.data); drawTempo(L.data); drawTiming(L.data); drawHist(L.data);
+    L.data = snapshot(E, true, gridOf(L)); L.lastVersion = E.version; L.dirty = false; L.lastAt = ts;
+    renderStats(L.data); renderTarget(L.data); renderLanes(L.data); drawTempo(L.data); drawTiming(L.data); drawHist(L.data);
   } else L.data.duration = E.time();
   renderNow(L.data);
+  if (L.bpm && (count || L.countAt == null)) $('#lNow').textContent = count || '–';
+  $('.deck').classList.toggle('pulse', pulse);
   const lastHit = E.onsets[E.onsets.length - 1];
-  $('#beat').className = 'beat' + (lastHit && E.time() - lastHit.t < 0.12 ? ' ' + lastHit.lane : '');
+  $('#beat').className = 'beat' + (pulse ? ' all' : lastHit && E.time() - lastHit.t < 0.12 ? ' ' + lastHit.lane : '');
   drawWave(L.data); drawLanes(L.data);
   requestAnimationFrame(frame);
 }
 
 // ---------- wiring ----------
+// Mode and target are fixed while listening: the grid is laid down when the take starts.
+function setControls() {
+  const on = !!state.live;
+  $('#mode').disabled = on; $('#bpm').disabled = on;
+  $('#bpmOpt').hidden = state.mode !== 'set';
+}
+$('#mode').addEventListener('change', (e) => { state.mode = e.target.value; setControls(); });
+$('#bpm').addEventListener('change', (e) => { state.bpm = clampBpm(e.target.value); e.target.value = state.bpm; });
 $('#listen').addEventListener('click', () => { if (state.live) stop(); else start(); });
 $('#sens').addEventListener('input', (e) => { state.sens = +e.target.value; if (state.live) state.live.dirty = true; });
 $('#split').addEventListener('change', (e) => {
   state.splitMode = e.target.value;
   if (state.live) state.live.dirty = true;
-  else if (state.lastE) { state.last = snapshot(state.lastE, false); renderAll(); }
+  else if (state.lastE) { state.last = snapshot(state.lastE, false, state.lastGrid); renderAll(); }
 });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { if (state.live) { keepAwake(); state.ctx && state.ctx.resume(); } drawAll(); } });
 let rz; new ResizeObserver(() => { clearTimeout(rz); rz = setTimeout(drawAll, 60); }).observe(document.querySelector('.wrap'));
@@ -712,6 +859,7 @@ try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawAll);
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 $('#export').addEventListener('click', exportHistory);
+state.mode = $('#mode').value; state.bpm = clampBpm($('#bpm').value); setControls(); // the browser may restore the form on reload
 renderAll();
 renderHistory();
 })();
